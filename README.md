@@ -4,7 +4,7 @@
 
 [Project Page](https://xavihart.github.io/ACWM-Phys) · [arXiv](#) · [Dataset](https://huggingface.co/datasets/t1an/ACWM-Phys) · [Checkpoints](https://huggingface.co/t1an/ACWM-Phys-checkpoints)
 
-> *Haotian Xue†, Yipu Chen\*, Liqian Ma\*, Zelin Zhao, Lama Moukheiber, Yongxin Chen*
+> *Haotian Xue†, Yipu Chen\*, Liqian Ma\*, Zelin Zhao, Lama Moukheiber, Yuchen Zhu, Yongxin Chen*
 > Georgia Institute of Technology
 > (†project lead, \*equal contribution)
 
