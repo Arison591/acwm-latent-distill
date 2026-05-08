@@ -1,0 +1,43 @@
+model_name: "VideoDiT"
+dynamics_class: "DiffusionForcing_WM"
+model_type: "dit_s"
+
+model_config:
+  in_channels: 16
+  patch_size: 2
+  action_compress_rate: 4
+  max_frames: 37
+  action_dropout_prob: 0.0
+  temporal_causal: false
+  vae_name: "WanVAE"
+  vae_config:
+    - "Wan2.1_VAE.pth"  # download from HF: t1an/ACWM-Phys-checkpoints
+  scheduler: "FlowMatch"
+  training_timesteps: 1000
+  motion_weighting_gamma: 0.0
+  focal_alpha: 0.0           # focal loss exponent, set > 0 to focus on hard samples
+
+dataset:
+  name: "pour_water"
+  seq_len: 37
+  obs_shape: [3, 240, 240]
+  train_size: 40000
+  test_cuts: 5
+
+training:
+  batch_size: 4
+  learning_rate: 1e-4
+  num_epochs: 1000
+  total_steps: 100000
+  num_workers: 8
+  grad_clip: 1.0
+  log_freq: 10
+  val_freq: 1000
+  checkpoint_freq: 2000
+
+wandb:
+  project: "AC-WM-Phys"
+  run_name: "VideoDiT_S_pour_water"
+
+distributed:
+  use_fsdp: false

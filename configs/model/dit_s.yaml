@@ -1,0 +1,4 @@
+model_config:
+  dim: 768
+  num_layers: 10
+  num_heads: 12
