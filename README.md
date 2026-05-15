@@ -219,5 +219,11 @@ Three model sizes: DiT-S (~200M), DiT-M (~600M), DiT-L (~800M).
 ---
 
 ## Citation
-
-Coming soon.
+```
+@article{xue2026acwm,
+  title={ACWM-Phys: Investigating Generalized Physical Interaction in Action-Conditioned Video World Models},
+  author={Xue, Haotian and Chen, Yipu and Ma, Liqian and Zhao, Zelin and Moukheiber, Lama and Zhu, Yuchen and Che, Yongxin},
+  journal={arXiv preprint arXiv:2605.08567},
+  year={2026}
+}
+```
