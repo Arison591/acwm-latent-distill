@@ -23,6 +23,7 @@ einops>=0.8.0
 
 # Training utilities
 wandb>=0.16.0
+moviepy>=2.0.0
 tqdm>=4.65.0
 omegaconf>=2.3.0
 huggingface-hub>=0.23.0

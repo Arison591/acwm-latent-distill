@@ -13,6 +13,7 @@ import time
 import numpy as np
 import signal
 import imageio
+import copy
 
 # Global variables for signal handling
 _model = None
@@ -47,6 +48,14 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".
 from acwm.model.interface import get_dynamics_class
 from acwm.dataset.dataset import RoboticsDatasetWrapper
 from acwm.utils.visualization import visualize_layout
+from acwm.action_latent.buckets import assign_magnitude_buckets
+from acwm.action_latent.counterfactual import make_counterfactual_actions
+from acwm.action_latent.dataset_filter import (
+    estimate_action_bucket_threshold,
+    filter_dataset_by_action_bucket,
+)
+from acwm.distill.losses import kd_loss, response_kd_loss
+from acwm.distill.teacher import load_checkpoint_state_dict
 
 def setup_ddp():
     if 'RANK' in os.environ:
@@ -77,6 +86,14 @@ def save_checkpoint(model, optimizer, step, epoch, path, wandb_run_id=None, save
     # Also save a 'latest.pt' for easy resuming
     ckpt_dir = os.path.dirname(path) if path else _ckpt_dir
     latest_path = os.path.join(ckpt_dir, "latest.pt")
+    if save_numbered and path:
+        try:
+            if os.path.exists(latest_path):
+                os.remove(latest_path)
+            os.link(path, latest_path)
+            return
+        except OSError:
+            pass
     torch.save(checkpoint, latest_path)
 
 def load_checkpoint(model, optimizer, path, device):
@@ -111,6 +128,113 @@ def load_checkpoint(model, optimizer, path, device):
         
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     return checkpoint['step'], checkpoint['epoch'], checkpoint.get('wandb_run_id')
+
+def build_distillation_teachers(config, dynamics_class, model_name, model_config, device, rank=0):
+    distill_cfg = config.get('distillation', {})
+    if not distill_cfg.get('enabled', False):
+        return {}
+
+    ckpt_map = distill_cfg.get('teacher_checkpoints', {})
+    if not ckpt_map:
+        raise ValueError("distillation.enabled=true requires distillation.teacher_checkpoints")
+
+    teachers = {}
+    for bucket_name, ckpt_path in ckpt_map.items():
+        if ckpt_path is None:
+            continue
+        bucket_id = _bucket_name_to_id(bucket_name)
+        teacher = dynamics_class(model_name, copy.deepcopy(model_config)).to(device)
+        state_dict = load_checkpoint_state_dict(ckpt_path, map_location=device)
+        missing, unexpected = teacher.load_state_dict(state_dict, strict=False)
+        teacher.eval()
+        for param in teacher.parameters():
+            param.requires_grad_(False)
+        teachers[bucket_id] = teacher
+        if rank == 0:
+            print(
+                f"--- Loaded teacher bucket={bucket_name}({bucket_id}) from {ckpt_path} "
+                f"missing={len(missing)} unexpected={len(unexpected)} ---"
+            )
+
+    if not teachers:
+        raise ValueError("distillation.enabled=true but no valid teacher checkpoints were provided")
+    return teachers
+
+def compute_distillation_loss(core_model, teachers, distill_cfg, action_bucket_cfg, z, action, student_outputs):
+    if not teachers:
+        return z.new_tensor(0.0), {}
+
+    lambda_kd = float(distill_cfg.get('lambda_kd', distill_cfg.get('loss_weights', {}).get('lambda_kd', 0.25)))
+    mu_resp = float(distill_cfg.get('mu_resp', distill_cfg.get('loss_weights', {}).get('mu_resp', 0.5)))
+    bucket_threshold = distill_cfg.get('bucket_threshold', action_bucket_cfg.get('threshold'))
+    counterfactual_modes = distill_cfg.get('counterfactuals', ['zero', 'reverse', 'scale_0_5'])
+    bucket_ids, used_threshold = assign_magnitude_buckets(
+        action.detach(),
+        threshold=bucket_threshold,
+        score_type=action_bucket_cfg.get('score_type', 'auto'),
+    )
+
+    total = z.new_tensor(0.0)
+    kd_total = z.new_tensor(0.0)
+    resp_total = z.new_tensor(0.0)
+    used_buckets = 0
+
+    for bucket_id, teacher in teachers.items():
+        mask = bucket_ids == int(bucket_id)
+        if not mask.any():
+            continue
+        used_buckets += 1
+        with torch.no_grad():
+            teacher_outputs = teacher.training_outputs(
+                z[mask].detach(),
+                action[mask],
+                t_values=student_outputs['t_values'][mask],
+                eps=student_outputs['eps'][mask],
+            )
+        kd = kd_loss(student_outputs['v_pred'][mask], teacher_outputs['v_pred'])
+        kd_total = kd_total + kd
+
+        if mu_resp > 0 and counterfactual_modes:
+            variants = make_counterfactual_actions(action, counterfactual_modes)
+            for _, cf_action in variants.items():
+                student_cf = core_model.training_outputs(
+                    z[mask],
+                    cf_action[mask],
+                    t_values=student_outputs['t_values'][mask],
+                    eps=student_outputs['eps'][mask],
+                )
+                with torch.no_grad():
+                    teacher_cf = teacher.training_outputs(
+                        z[mask].detach(),
+                        cf_action[mask],
+                        t_values=student_outputs['t_values'][mask],
+                        eps=student_outputs['eps'][mask],
+                    )
+                resp_total = resp_total + response_kd_loss(
+                    student_outputs['v_pred'][mask],
+                    student_cf['v_pred'],
+                    teacher_outputs['v_pred'],
+                    teacher_cf['v_pred'],
+                ) / max(1, len(variants))
+
+    if used_buckets > 0:
+        kd_total = kd_total / used_buckets
+        resp_total = resp_total / used_buckets
+    total = lambda_kd * kd_total + mu_resp * resp_total
+    logs = {
+        "train/kd_loss": kd_total.detach(),
+        "train/response_kd_loss": resp_total.detach(),
+        "train/action_bucket_threshold": used_threshold,
+    }
+    return total, logs
+
+def _bucket_name_to_id(name):
+    key = str(name).lower()
+    if key == "small":
+        return 0
+    if key == "large":
+        return 1
+    return int(name)
 
 class Evaluator:
     """
@@ -264,7 +388,8 @@ def main():
     # Optional: Load model config from a separate file if provided
     model_type = config.get('model_type', None)
     if model_type:
-        model_config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "model", f"{model_type}.yaml")
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        model_config_path = os.path.join(project_root, "configs", "model", f"{model_type}.yaml")
         if os.path.exists(model_config_path):
             with open(model_config_path, 'r') as mf:
                 model_spec = yaml.safe_load(mf)
@@ -314,6 +439,9 @@ def main():
 
     dynamics_class = get_dynamics_class(dynamics_class_name)
     dynamics_model = dynamics_class(model_name, model_config).to(device)
+    distillation_teachers = build_distillation_teachers(
+        config, dynamics_class, model_name, model_config, device, rank=rank
+    )
     
     # 2. Optimizer
     optimizer = torch.optim.AdamW(dynamics_model.parameters(), lr=float(config['training']['learning_rate']))
@@ -350,11 +478,15 @@ def main():
 
     # 4. Initialize WandB
     if rank == 0:
-        if config['wandb'].get('api_key') and config['wandb']['api_key'] != "YOUR_WANDB_API_KEY_HERE":
-            os.environ["WANDB_API_KEY"] = config['wandb']['api_key']
+        wandb_cfg = config.get('wandb', {})
+        if wandb_cfg.get('api_key') and wandb_cfg['api_key'] != "YOUR_WANDB_API_KEY_HERE":
+            os.environ["WANDB_API_KEY"] = wandb_cfg['api_key']
+        elif "WANDB_MODE" not in os.environ and "WANDB_API_KEY" not in os.environ:
+            os.environ["WANDB_MODE"] = "offline"
+            print("--- WANDB_API_KEY not set; defaulting WANDB_MODE=offline ---")
         
         wandb.init(
-            project=config['wandb']['project'],
+            project=wandb_cfg['project'],
             name=run_name,
             config=config,
             id=wandb_run_id,
@@ -447,6 +579,38 @@ def main():
             print(f"Legacy Split: train_windows={len(train_indices)}, val_windows={len(val_indices)}")
             if train_size: print(f"Target train_trajs: {train_size}, test_trajs: {ind_test_size}")
 
+    bucket_cfg = config.get('action_bucket', {})
+    train_filter_bucket = bucket_cfg.get('train_filter_bucket')
+    if (train_filter_bucket is not None or config.get('distillation', {}).get('enabled', False)) and bucket_cfg.get('threshold') is None:
+        quantile = float(bucket_cfg.get('quantile', 0.5))
+        threshold, score_type = estimate_action_bucket_threshold(
+            train_dataset, quantile=quantile, return_score_type=True
+        )
+        bucket_cfg['threshold'] = threshold
+        bucket_cfg['score_type'] = score_type
+        if rank == 0:
+            print(
+                f"--- Estimated action bucket threshold={bucket_cfg['threshold']:.6f} "
+                f"(quantile={quantile}, score_type={score_type}) ---"
+            )
+    if train_filter_bucket is not None:
+        threshold = bucket_cfg.get('threshold')
+        quantile = float(bucket_cfg.get('quantile', 0.5))
+        score_type = bucket_cfg.get('score_type', 'auto')
+        before = len(train_dataset)
+        train_dataset = filter_dataset_by_action_bucket(
+            train_dataset,
+            bucket=train_filter_bucket,
+            threshold=threshold,
+            quantile=quantile,
+            score_type=score_type,
+        )
+        if rank == 0:
+            print(
+                f"--- Action bucket filter: train={train_filter_bucket}, "
+                f"windows {before} -> {len(train_dataset)} ---"
+            )
+
     train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank) if world_size > 1 else None
     train_loader = DataLoader(
         train_dataset, 
@@ -514,7 +678,24 @@ def main():
                 z = model.module.encode_obs(obs) if hasattr(model, 'module') else model.encode_obs(obs)
             
             # Forward & Backward
-            loss = model.module.training_loss(z, action) if hasattr(model, 'module') else model.training_loss(z, action)
+            core_model = model.module if hasattr(model, 'module') else model
+            if config.get('distillation', {}).get('enabled', False):
+                student_outputs = core_model.training_outputs(z, action)
+                base_loss = student_outputs['loss']
+                distill_loss, distill_logs = compute_distillation_loss(
+                    core_model,
+                    distillation_teachers,
+                    config.get('distillation', {}),
+                    config.get('action_bucket', {}),
+                    z,
+                    action,
+                    student_outputs,
+                )
+                loss = base_loss + distill_loss
+            else:
+                base_loss = None
+                distill_logs = {}
+                loss = core_model.training_loss(z, action)
             loss.backward()
             
             grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config['training']['grad_clip'])
@@ -529,14 +710,19 @@ def main():
                 pbar.set_postfix({"loss": f"{loss.item():.4f}", "st": f"{step_time_total:.2f}s"})
                 
                 if step % config['training']['log_freq'] == 0:
-                    wandb.log({
+                    log_payload = {
                         "train/loss": loss.item(),
                         "train/grad_norm": grad_norm,
                         "train/epoch": epoch,
                         "time/data_loading": data_time,
                         "time/training_step": train_step_time,
                         "time/seconds_per_step": step_time_total,
-                    }, step=step)
+                    }
+                    if base_loss is not None:
+                        log_payload["train/base_loss"] = base_loss.item()
+                    for key, value in distill_logs.items():
+                        log_payload[key] = value.item() if torch.is_tensor(value) else value
+                    wandb.log(log_payload, step=step)
                 
                 # Periodic Evaluation (Trigger at val_freq or step 10 for quick verification)
                 val_freq = config['training'].get('val_freq', 1000)

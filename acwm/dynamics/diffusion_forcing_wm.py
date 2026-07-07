@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from acwm.model.interface import DIT_CLASS_MAP, VAE_CLASS_MAP
+from acwm.action_latent.encoder import build_action_encoder, IdentityActionEncoder
 
 class DiffusionForcing_WM(nn.Module):
     def __init__(self, model_name, model_config):
@@ -15,7 +16,17 @@ class DiffusionForcing_WM(nn.Module):
             'rope_config', 'action_dropout_prob', 'temporal_causal',
             'use_flash_attn', 'action_conditioning',
         ]
+        raw_action_dim = model_config.get('action_dim')
+        action_encoder_config = model_config.get('action_encoder')
+        if action_encoder_config:
+            self.action_encoder = build_action_encoder(action_encoder_config, raw_action_dim)
+            encoded_action_dim = getattr(self.action_encoder, 'latent_dim', raw_action_dim)
+        else:
+            self.action_encoder = IdentityActionEncoder(action_dim=raw_action_dim)
+            encoded_action_dim = raw_action_dim
+
         dit_config = {k: v for k, v in model_config.items() if k in dit_keys}
+        dit_config['action_dim'] = encoded_action_dim
         
         # Force temporal_causal=True for Diffusion Forcing
         dit_config['temporal_causal'] = True
@@ -37,6 +48,8 @@ class DiffusionForcing_WM(nn.Module):
         # init the scheduler
         self.scheduler.set_timesteps(model_config['training_timesteps'], training=True)
         
+    def encode_action(self, a):
+        return self.action_encoder(a)
     
     def encode_obs(self, o):
         # o can be [B, T, 3, H, W] or [B, T, H, W, 3], values in [0, 1]
@@ -59,21 +72,22 @@ class DiffusionForcing_WM(nn.Module):
         return latent
     
     
-    def training_loss(self, z, a):
-        # z: B, T', H', W', D
-        # a: B, T_pixel, C_a
-        # return: loss
-        
+    def training_outputs(self, z, a, t_values=None, eps=None):
+        """Return flow-matching training outputs for distillation-aware training."""
         B, T = z.shape[0], z.shape[1]
         
-        # Sample independent timesteps for ALL frames (including first frame)
-        t_indices = torch.randint(0, self.scheduler.timesteps.shape[0], (B, T), device=z.device)
-        t_values = self.scheduler.timesteps[t_indices] # [B, T]
+        if t_values is None:
+            # Sample independent timesteps for ALL frames (including first frame)
+            t_indices = torch.randint(0, self.scheduler.timesteps.shape[0], (B, T), device=z.device)
+            t_values = self.scheduler.timesteps[t_indices] # [B, T]
         
-        # Add independent noise using the helper we added to FlowMatchScheduler
-        z_t, eps = self.scheduler.add_independent_noise(z, t_values)
+        if eps is None:
+            z_t, eps = self.scheduler.add_independent_noise(z, t_values)
+        else:
+            z_t = self.scheduler.add_noise(z, eps, t_values)
         
-        v_pred = self.model(z_t, t_values, a)
+        a_model = self.encode_action(a)
+        v_pred = self.model(z_t, t_values, a_model)
         v_target = self.scheduler.training_target(z, eps, t_values)
         
         # Apply training weights
@@ -109,6 +123,21 @@ class DiffusionForcing_WM(nn.Module):
             loss_map = loss_map * motion_weight
             
         loss = (weights.view(B, T, 1, 1, 1) * loss_map).mean()
+        return {
+            "loss": loss,
+            "v_pred": v_pred,
+            "v_target": v_target,
+            "z_t": z_t,
+            "t_values": t_values,
+            "eps": eps,
+        }
+
+    def training_loss(self, z, a):
+        # z: B, T', H', W', D
+        # a: B, T_pixel, C_a
+        # return: loss
+        outputs = self.training_outputs(z, a)
+        loss = outputs["loss"]
         return loss
         
     
@@ -181,7 +210,8 @@ class DiffusionForcing_WM(nn.Module):
                     t[:, 0] = 0
                 
                 with torch.no_grad():
-                    v_pred = self.model(z, t, a)
+                    a_model = self.encode_action(a)
+                    v_pred = self.model(z, t, a_model)
                     z = self.scheduler.step(v_pred, t, z)
                     
                     if noise_level == 0:
@@ -206,7 +236,7 @@ class DiffusionForcing_WM(nn.Module):
                     
                     # Correct actions for current length
                     L_curr = self.model.action_compress_rate * t_idx + 1
-                    a_curr = a[:, :L_curr]
+                    a_curr = self.encode_action(a[:, :L_curr])
                     
                     with torch.no_grad():
                         v_pred = self.model(z_curr, t_seq, a_curr)

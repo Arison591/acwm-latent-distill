@@ -44,6 +44,8 @@ class BaseRoboticsDataset(Dataset):
             print(f"[{config.name}]({split if split else 'root'}) WARNING: metadata.pt not found at {self.metadata_path}")
             self.init_metadata = []
 
+        metadata_items = list(enumerate(self.init_metadata))
+
         # Deterministic Sampling if max_trajs is provided
         if max_trajs and len(self.init_metadata) > max_trajs:
             import random
@@ -51,13 +53,13 @@ class BaseRoboticsDataset(Dataset):
             seed = 0 if (self.split and 'test' in self.split) else 42
             rng = random.Random(seed) 
             sampled_indices = sorted(rng.sample(range(len(self.init_metadata)), max_trajs))
-            self.init_metadata = [self.init_metadata[i] for i in sampled_indices]
+            metadata_items = [(i, self.init_metadata[i]) for i in sampled_indices]
             print(f"[{config.name}]({split if split else 'root'}) Sampled {max_trajs} trajectories deterministically.")
             
         # Build indices efficiently
         self.indices = []
         required_len = (config.seq_len - 1) * config.sampling_rate + 1
-        for i, entry in enumerate(self.init_metadata):
+        for traj_idx, entry in metadata_items:
             t_len = entry['length'] if 'length' in entry else self._get_traj_len(entry)
             if t_len >= required_len:
                 if self.test_cuts and self.split and 'test' in self.split:
@@ -71,13 +73,13 @@ class BaseRoboticsDataset(Dataset):
                         # Use floor to ensure integer indices
                         start_indices = np.linspace(0, max_start, self.test_cuts, dtype=int)
                         for start_f in start_indices:
-                            self.indices.append((i, int(start_f)))
+                            self.indices.append((traj_idx, int(start_f)))
                 else:
                     # Standard sliding window for training or when test_cuts not set
                     # Add all valid starting positions
                     # A window of span required_len can start at 0, 1, ..., t_len - required_len
                     for start_f in range(t_len - required_len + 1):
-                        self.indices.append((i, start_f))
+                        self.indices.append((traj_idx, start_f))
         
         # Free up init_metadata memory
         self.init_metadata = None
