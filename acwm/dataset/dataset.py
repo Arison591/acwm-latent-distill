@@ -58,8 +58,14 @@ class BaseRoboticsDataset(Dataset):
             
         # Build indices efficiently
         self.indices = []
+        missing_videos = []
         required_len = (config.seq_len - 1) * config.sampling_rate + 1
         for traj_idx, entry in metadata_items:
+            video_rel_path = entry.get('video_path')
+            video_path = os.path.join(self.effective_root, video_rel_path) if video_rel_path else None
+            if not video_path or not os.path.isfile(video_path):
+                missing_videos.append(video_rel_path or f"trajectory {traj_idx}")
+                continue
             t_len = entry['length'] if 'length' in entry else self._get_traj_len(entry)
             if t_len >= required_len:
                 if self.test_cuts and self.split and 'test' in self.split:
@@ -86,6 +92,12 @@ class BaseRoboticsDataset(Dataset):
         self._full_metadata = None
         
         print(f"[{config.name}]({split if split else 'root'}) Initialized: {len(self.indices)} windows.")
+        if missing_videos:
+            example = ", ".join(missing_videos[:3])
+            print(
+                f"[{config.name}]({split if split else 'root'}) Skipped "
+                f"{len(missing_videos)} trajectories with missing video files (e.g. {example})."
+            )
         self.cache = OrderedDict()
 
     @property
@@ -112,6 +124,10 @@ class BaseRoboticsDataset(Dataset):
             return self.cache[video_rel_path]
 
         video_path = os.path.join(self.effective_root, video_rel_path)
+        if not os.path.isfile(video_path):
+            raise FileNotFoundError(
+                f"video file is missing: {video_path}. Download the referenced split before training/evaluation."
+            )
         cap = cv2.VideoCapture(video_path)
         frames = []
         target_h, target_w = self.config.obs_shape[1], self.config.obs_shape[2]
@@ -127,8 +143,7 @@ class BaseRoboticsDataset(Dataset):
         cap.release()
 
         if not frames:
-            print(f"Warning: Could not read any frames from {video_path}")
-            return torch.zeros((0, 3, target_h, target_w), dtype=torch.uint8)
+            raise RuntimeError(f"could not decode any frames from {video_path}")
 
         # (T, H, W, C) -> (T, C, H, W)
         video_tensor = torch.from_numpy(np.stack(frames)).permute(0, 3, 1, 2).contiguous()

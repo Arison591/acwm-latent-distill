@@ -158,7 +158,15 @@ class DiffusionForcing_WM(nn.Module):
         return loss
     
     
-    def generate(self, o_0, a, num_inference_steps=50, noise_level=0.0, mode="autoregressive"):
+    def generate(
+        self,
+        o_0,
+        a,
+        num_inference_steps=50,
+        noise_level=0.0,
+        mode="autoregressive",
+        generator=None,
+    ):
         # o_0: B, H, W, 3
         # a: B, T_pixel, A
         # return: B, T_pixel, H, W, 3
@@ -189,7 +197,11 @@ class DiffusionForcing_WM(nn.Module):
         
         if mode == "parallel":
             # 3. Initialize latent sequence with noise
-            z = torch.randn(B, T_latent, H_prime, W_prime, D, device=device)
+            z = torch.randn(
+                B, T_latent, H_prime, W_prime, D,
+                device=device,
+                generator=generator,
+            )
             
             # 4. Handle first frame noise level
             if noise_level > 0:
@@ -224,7 +236,11 @@ class DiffusionForcing_WM(nn.Module):
             # 4. Roll the window frame by frame
             for t_idx in range(1, T_latent):
                 # a. Add a new noisy frame to the end
-                z_next = torch.randn(B, 1, H_prime, W_prime, D, device=device)
+                z_next = torch.randn(
+                    B, 1, H_prime, W_prime, D,
+                    device=device,
+                    generator=generator,
+                )
                 z_curr = torch.cat([z_all, z_next], dim=1) # [B, t+1, ...]
                 
                 # b. Denoise only the LAST frame in the current sequence

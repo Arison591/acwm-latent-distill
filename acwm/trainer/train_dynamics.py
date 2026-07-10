@@ -22,11 +22,12 @@ _step = 0
 _epoch = 0
 _ckpt_dir = ""
 _wandb_run_id = None
+_checkpoint_enabled = True
 
 def signal_handler(sig, frame):
     """Save checkpoint on SIGTERM (Slurm timeout/preemption)."""
     global _model, _optimizer, _step, _epoch, _ckpt_dir, _wandb_run_id
-    if _model is not None and _ckpt_dir:
+    if _checkpoint_enabled and _model is not None and _ckpt_dir:
         rank = 0
         if dist.is_initialized():
             rank = dist.get_rank()
@@ -371,12 +372,17 @@ class Evaluator:
         return metrics
 
 def main():
-    global _model, _optimizer, _step, _epoch, _ckpt_dir, _wandb_run_id
+    global _model, _optimizer, _step, _epoch, _ckpt_dir, _wandb_run_id, _checkpoint_enabled
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, required=True, help="Path to yaml config")
     parser.add_argument("--resume", action="store_true", help="Resume from latest checkpoint in wandb dir")
     parser.add_argument("--ckpt_path", type=str, default=None, help="Explicit path to checkpoint to resume from")
+    parser.add_argument("--no_checkpoints", action="store_true",
+                        help="Disable all checkpoint writes, including emergency saves.")
+    parser.add_argument("--export_model_path", type=str, default=None,
+                        help="Optionally export model weights only at the end (use /dev/shm for disk-safe runs).")
     args = parser.parse_args()
+    _checkpoint_enabled = not args.no_checkpoints
     
     # Load config
     with open(args.config, 'r') as f:
@@ -731,12 +737,24 @@ def main():
                     eval_start = time.time()
                     
                     # Evaluate In-Distribution
-                    ind_metrics = evaluator.evaluate(ind_test_loader, "ind_test", step, num_batches=10, log_videos=True)
+                    log_videos = config['training'].get('eval_log_videos', True)
+                    eval_batches = config['training'].get('eval_num_batches', 10)
+                    ind_metrics = evaluator.evaluate(
+                        ind_test_loader, "ind_test", step,
+                        num_batches=eval_batches, log_videos=log_videos,
+                    )
+                    if rank == 0:
+                        print(f"[eval step={step}] {ind_metrics}")
                     wandb.log(ind_metrics, step=step)
                     
                     # Evaluate Out-of-Distribution
                     if ood_test_loader:
-                        ood_metrics = evaluator.evaluate(ood_test_loader, "ood_test", step, num_batches=10, log_videos=True)
+                        ood_metrics = evaluator.evaluate(
+                            ood_test_loader, "ood_test", step,
+                            num_batches=eval_batches, log_videos=log_videos,
+                        )
+                        if rank == 0:
+                            print(f"[eval step={step}] {ood_metrics}")
                         wandb.log(ood_metrics, step=step)
                     
                     eval_time = time.time() - eval_start
@@ -745,10 +763,10 @@ def main():
                 
                 # Checkpoints
                 ckpt_freq = config['training'].get('checkpoint_freq', 2000)
-                if step % ckpt_freq == 0:
+                if _checkpoint_enabled and ckpt_freq and step % ckpt_freq == 0:
                     ckpt_path = os.path.join(ckpt_dir, f"checkpoint_{step}.pt")
                     save_checkpoint(model, optimizer, step, epoch, ckpt_path, wandb_run_id=wandb_run_id)
-                elif step % 500 == 0:
+                elif _checkpoint_enabled and step % 500 == 0:
                     save_checkpoint(model, optimizer, step, epoch, None, wandb_run_id=wandb_run_id, save_numbered=False)
             
             # Critical: Sync all processes before starting next step to disentangle eval time
@@ -759,6 +777,19 @@ def main():
         if world_size > 1:
             dist.barrier()
         
+    if rank == 0 and args.export_model_path:
+        export_path = os.path.abspath(args.export_model_path)
+        export_dir = os.path.dirname(export_path)
+        if export_dir:
+            os.makedirs(export_dir, exist_ok=True)
+        export_model = model.module if hasattr(model, 'module') else model
+        torch.save({
+            'model_state_dict': export_model.state_dict(),
+            'step': step,
+            'epoch': _epoch,
+        }, export_path)
+        print(f"--- Exported model weights only: {export_path} ---")
+
     if rank == 0:
         wandb.finish()
     cleanup_ddp()

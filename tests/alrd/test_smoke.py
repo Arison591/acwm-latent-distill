@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import torch
 
@@ -11,6 +12,8 @@ from acwm.action_latent.buckets import assign_magnitude_buckets, compute_bucket_
 from acwm.action_latent.counterfactual import make_counterfactual_actions
 from acwm.action_latent.encoder import ConvActionEncoder, IdentityActionEncoder, MLPActionEncoder
 from acwm.distill.losses import kd_loss, prediction_loss, response_kd_loss
+from acwm.dataset.data_config import DatasetConfig
+from acwm.dataset.dataset import BaseRoboticsDataset
 
 
 def test_action_encoders() -> None:
@@ -68,8 +71,32 @@ def test_distillation_losses_detach_teacher() -> None:
     assert teacher_cf.grad is None
 
 
+def test_dataset_skips_missing_videos() -> None:
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        torch.save(
+            [{
+                "video_path": "missing.mp4",
+                "length": 2,
+                "actions": torch.zeros(2, 1),
+            }],
+            root / "metadata.pt",
+        )
+        dataset = BaseRoboticsDataset(
+            DatasetConfig(
+                name="smoke",
+                root_dir=str(root),
+                action_dim=1,
+                obs_shape=(3, 8, 8),
+                seq_len=2,
+            )
+        )
+        assert len(dataset) == 0
+
+
 if __name__ == "__main__":
     test_action_encoders()
     test_buckets_and_counterfactuals()
     test_distillation_losses_detach_teacher()
+    test_dataset_skips_missing_videos()
     print("ALRD smoke tests passed")

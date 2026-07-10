@@ -24,8 +24,11 @@ class WanVAEWrapper(torch.nn.Module):
         self.register_buffer("mean", torch.tensor(mean, dtype=torch.float32))
         self.register_buffer("std", torch.tensor(std, dtype=torch.float32))
 
-        # WAN_VAE_PATH env var always wins; bare filename from config is the last fallback
-        pretrained_path = os.environ.get("WAN_VAE_PATH") or pretrained_path or "Wan2.1_VAE.pth"
+        # WAN_VAE_PATH env var always wins; bare filenames from configs may live
+        # under checkpoints/ in disk-constrained local runs.
+        pretrained_path = _resolve_pretrained_path(
+            os.environ.get("WAN_VAE_PATH") or pretrained_path or "Wan2.1_VAE.pth"
+        )
 
         # init model
         self.model = _video_vae(
@@ -72,6 +75,24 @@ class WanVAEWrapper(torch.nn.Module):
         # to [batch_size, num_frames, num_channels, height, width]
         output = output.permute(0, 2, 1, 3, 4)
         return output
+
+
+def _resolve_pretrained_path(pretrained_path: str) -> str:
+    if os.path.exists(pretrained_path):
+        return pretrained_path
+    if os.path.isabs(pretrained_path):
+        return pretrained_path
+
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    candidates = [
+        os.path.join("checkpoints", pretrained_path),
+        os.path.join(project_root, pretrained_path),
+        os.path.join(project_root, "checkpoints", pretrained_path),
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return pretrained_path
 
 class WanVAEPerFrameWrapper(WanVAEWrapper):
     """

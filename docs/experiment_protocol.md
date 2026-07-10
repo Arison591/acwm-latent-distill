@@ -13,6 +13,9 @@
 3. **Oracle specialist teachers**
    - Run `push_cube_teacher_small.yaml` and `push_cube_teacher_large.yaml`.
    - A specialist must beat the generalist inside its own bucket before distillation is worth running.
+   - First inspect action magnitudes. If they are constant (as in Push Cube), define
+     buckets by direction and name them as directions in reports; do not describe them
+     as small/large magnitudes.
 
 4. **Prediction KD student**
    - Use the student config with `mu_resp: 0.0`.
@@ -29,6 +32,10 @@
 - Direction consistency: compare `pred(a)` and `pred(-a)`.
 - Scale behavior: compare `pred(0.5a)`, `pred(a)`, and later `pred(2a)`.
 - Visual grid: input, GT, `pred(a)`, `pred(0)`, `pred(-a)`, `pred(0.5a)`.
+- Pair every action variant with the exact same initial diffusion noise. Otherwise
+  action-sensitivity is confounded by sampling variance.
+- Verify that every metadata-referenced video exists before reporting metrics. Missing
+  videos must be repaired or excluded, never converted to all-zero observations.
 
 ## Default Counterfactuals
 
