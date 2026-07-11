@@ -14,8 +14,9 @@
    - Run `push_cube_teacher_small.yaml` and `push_cube_teacher_large.yaml`.
    - A specialist must beat the generalist inside its own bucket before distillation is worth running.
    - First inspect action magnitudes. If they are constant (as in Push Cube), define
-     buckets by direction and name them as directions in reports; do not describe them
-     as small/large magnitudes.
+     buckets by an action-semantics-aware axis. For Push Cube, `signed_action_0` is a
+     signed absolute-target-coordinate regime, not motion direction; do not describe
+     it as small/large magnitude or direction.
 
 4. **Prediction KD student**
    - Use the student config with `mu_resp: 0.0`.
@@ -29,7 +30,8 @@
 
 - ACWM-Phys metrics: MSE, masked MSE, PSNR, SSIM.
 - Action sensitivity: `MSE(pred(a), pred(0))`.
-- Direction consistency: compare `pred(a)` and `pred(-a)`.
+- Negation response: compare `pred(a)` and `pred(-a)` and interpret it according to
+  environment semantics (negated target for Push Cube, opposite torque for Reacher).
 - Scale behavior: compare `pred(0.5a)`, `pred(a)`, and later `pred(2a)`.
 - Visual grid: input, GT, `pred(a)`, `pred(0)`, `pred(-a)`, `pred(0.5a)`.
 - Pair every action variant with the exact same initial diffusion noise. Otherwise

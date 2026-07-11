@@ -10,10 +10,10 @@
 
 ## Current 2026-07-11 Gate
 
-Push Cube has constant action magnitude, so `small`/`large` is necessarily a signed
-action-direction split there. The direction-specialist response-KD run is a **go**:
+Push Cube has constant action magnitude, so `small`/`large` is actually a signed
+target-coordinate split there. The signed-target-coordinate response-KD run is a **go**:
 under paired-noise ablation it improved `MSE(pred(a), pred(-a))` by over two orders of
-magnitude on both ID and repaired OOD small-direction subsets without a meaningful
+magnitude on both ID and repaired OOD signed-coordinate subsets without a meaningful
 true-action rollout loss. Continue only with the responsive specialist; do not use the
 action-blind opposite-direction teacher as a distillation target.
 Before scaling, finish the local Push Cube train-video repair: the current machine has
@@ -28,10 +28,19 @@ thresholds and new training runs must be rechecked once the split is complete.
 - The action encoder helps only by increasing model capacity, with no improvement in counterfactual response.
 - Push Cube works but Reacher fails completely under the same protocol.
 
+## Reacher 2026-07-11 Gate
+
+Reacher action magnitude is non-degenerate and balanced, but it is not a useful
+specialist axis: on 1,000 complete train episodes, high/low visual-motion proxy ratio
+is only `1.0705` and torque/motion correlation is `r=0.0546`. The official baseline is
+already strongly action-responsive across three seeds. Outcome: **C, redesign
+partition**. No specialist or KD run is allowed on this rejected partition. Move to
+Robot Arm and derive one action-semantics-aware failure axis before training teachers.
+
 ## First Redesigns
 
-- Use direction splits for 2D fixed-magnitude action environments; reserve magnitude
-  splits for datasets with verified magnitude variation.
+- Use partitions derived from verified environment action semantics; reserve magnitude
+  splits for datasets with verified magnitude variation and verified motion effect.
 - Keep continuous MLP action latent, but add an auxiliary transition-prediction head.
 - Raise `mu_resp` from `0.5` to `1.0` only after teacher quality is established.
 - Move response KD from velocity space to VAE latent rollout space if velocity matching is too noisy.

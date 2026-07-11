@@ -126,15 +126,16 @@ Two important fixes landed during setup:
 
 See [ALRD Validation Report](alrd_validation_2026-07-11.md) for the full protocol and
 numbers. The key result is a narrowed but positive feasibility signal: on Push Cube,
-direction-specialist response KD improved paired `pred(a)` versus `pred(-a)` sensitivity
+signed-target-coordinate-specialist response KD improved paired `pred(a)` versus `pred(-a)` sensitivity
 by over two orders of magnitude relative to a matched latent-only baseline on both ID
 and OOD subsets, while keeping true-action rollout quality essentially unchanged.
-The current paired eval uses the usable-train direction threshold `signed_action_0 =
+The current paired eval uses the usable-train signed-coordinate threshold `signed_action_0 =
 -0.018154`; ID/OOD eval videos are complete, while local `ind_train` is partially
 repaired to 1129/1500 available videos on the data disk.
 
 This replaces the old small/large-magnitude wording for Push Cube. Its action magnitude
-is constant, so the useful split is direction. The opposite-direction teacher was
+is constant, so the feasibility split is an absolute-target signed-coordinate regime,
+not demonstrated motion direction. The opposite signed-coordinate teacher was
 action-blind and must not be used for distillation until it passes the oracle gate.
 
 ## Next Steps

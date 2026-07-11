@@ -1,0 +1,30 @@
+{
+  "environment": "reacher",
+  "conclusion": "neither passes",
+  "gate_stage": "pre_training_partition_validation",
+  "matched_general_baseline_trained_in_this_run": false,
+  "official_baseline_evaluated": true,
+  "specialists_trained": false,
+  "teachers": {
+    "high_torque": {
+      "eligible_for_distillation": false,
+      "reason": "The proposed magnitude partition is not a validated motion-effect regime."
+    },
+    "low_torque": {
+      "eligible_for_distillation": false,
+      "reason": "The proposed magnitude partition is not a validated motion-effect regime."
+    }
+  },
+  "evidence": {
+    "episodes": 1000,
+    "high_to_low_visual_motion_ratio": 1.0704833917238634,
+    "pearson_action_motion": 0.05462781339883804,
+    "split_counts": {
+      "high": 500,
+      "low": 500
+    },
+    "threshold": 2.116720676422119
+  },
+  "distillation_allowed": false,
+  "note": "Neither teacher was trained because the mandatory action-semantics-aware partition precondition failed; this is not a measured model-performance comparison."
+}

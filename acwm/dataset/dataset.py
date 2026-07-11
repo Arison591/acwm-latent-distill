@@ -71,7 +71,7 @@ class BaseRoboticsDataset(Dataset):
                 if self.test_cuts and self.split and 'test' in self.split:
                     # Deterministic uniform cutting for test sets
                     if self.test_cuts == 1:
-                        self.indices.append((i, 0))
+                        self.indices.append((traj_idx, 0))
                     else:
                         # Uniformly space the start indices
                         # max possible start index is t_len - required_len

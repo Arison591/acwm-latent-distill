@@ -4,7 +4,7 @@ This repository update adds a small research scaffold for action-latent response
 
 The first target is not a large new world model. The target is a controlled Push Cube/Reacher loop that can answer one narrow question:
 
-> Can a compact student preserve specialist teachers' action response under counterfactual actions?
+> Can response distillation preserve a specialist teacher's action response under counterfactual actions?
 
 ## What Changed
 
@@ -78,7 +78,8 @@ python scripts/alrd/eval_action_ablation.py \
 - Default ALRD configs use intentionally small `train_size` and `total_steps`. Raise them after the smoke path is stable.
 - Response KD is computed in flow-matching velocity space, not pixel space.
 - Teacher splits must use a verified action statistic: Push Cube has fixed action
-  magnitude, so its useful split is signed action direction rather than magnitude.
+  magnitude, so its feasibility split is a signed absolute-target-coordinate regime,
+  not action magnitude or demonstrated motion direction.
 
 ## Current Status
 
