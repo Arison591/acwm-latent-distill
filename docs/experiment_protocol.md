@@ -1,5 +1,18 @@
 # ALRD Experiment Protocol
 
+## 历史协议（Push Cube；非当前默认路径）
+
+下列 Push Cube 流程作为既有可复现实验保留，不得覆盖 Reacher 的负结论。当前
+Robot Arm 的 response-first 协议见 `robot_arm_response_probe.md` 与
+`robot_arm_oracle_gate.md`。
+
+## 2026-07-11 protocol outcome
+
+The ACWM-Phys specialist/KD path is now a no-go under the response-first gates. Push
+Cube remains a narrow signed-target-coordinate feasibility result, Reacher rejects the
+magnitude partition, and Robot Arm fails Gate A. Do not run specialist training or KD
+from this protocol unless a future high-DoF dataset first passes Gate A.
+
 ## Order
 
 1. **Raw ACWM-DiT baseline**

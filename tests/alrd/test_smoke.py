@@ -12,6 +12,7 @@ from acwm.action_latent.buckets import assign_magnitude_buckets, compute_bucket_
 from acwm.action_latent.counterfactual import counterfactual_scale, counterfactual_semantics, make_counterfactual_actions
 from acwm.action_latent.action_stats import action_statistics, magnitude_split_diagnostics, motion_effect_diagnostics
 from acwm.action_latent.encoder import ConvActionEncoder, IdentityActionEncoder, MLPActionEncoder
+from acwm.action_latent.response import ActionPerturbationSampler, ActionSchema, CounterfactualEvaluator
 from acwm.distill.losses import kd_loss, prediction_loss, response_kd_loss
 from acwm.dataset.data_config import DatasetConfig
 from acwm.dataset.dataset import BaseRoboticsDataset
@@ -115,6 +116,28 @@ def test_dataset_skips_missing_videos() -> None:
             )
         )
         assert len(dataset) == 0
+
+
+def test_response_probe_primitives() -> None:
+    schema = ActionSchema.unresolved(2, provenance="smoke")
+    train_actions = torch.tensor([[[1.0, 2.0], [2.0, 4.0]], [[3.0, 6.0], [4.0, 8.0]]])
+    schema.fit(train_actions)
+    sampler = ActionPerturbationSampler(schema)
+    perturbed, record = sampler.sample(train_actions, "dim_0", "local_additive", seed=3)
+    assert record["dimensions"] == [0]
+    assert torch.equal(perturbed[..., 1], train_actions[..., 1])
+    masked, _ = sampler.sample(train_actions, "dim_1", "group_mask")
+    assert torch.equal(masked[..., 1], torch.zeros_like(masked[..., 1]))
+    try:
+        sampler.sample(train_actions, "dim_0", "zero_action")
+        assert False, "unknown 语义不应允许 zero_action"
+    except ValueError:
+        pass
+    summary = CounterfactualEvaluator.response_summary(torch.zeros(1, 2), torch.ones(1, 2), noise_floor=torch.full((1, 2), 0.25))
+    assert summary["response_to_noise_floor_ratio"] == 16.0
+    assert CounterfactualEvaluator.paired_response_mse(torch.zeros(1, 2), torch.ones(1, 2), torch.zeros(1, 2), torch.full((1, 2), 0.5)) == 0.25
+    fd = CounterfactualEvaluator.finite_difference_response(torch.zeros(1, 2), torch.ones(1, 2), 0.5)
+    assert torch.equal(fd, torch.full((1, 2), 2.0))
 
 
 if __name__ == "__main__":

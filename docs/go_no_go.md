@@ -1,5 +1,30 @@
 # ALRD Go / No-Go Criteria
 
+## Robot Arm 当前 Gate A
+
+先完成动作语义/数据清单审计，再执行三个种子的成对噪声响应探针。任何元数据与
+视频不一致、动作语义未核验、官方稠密检查点缺失或种子不足均为
+**insufficient_evidence**，只允许修复测量链路；绝不启动专家或 KD。
+
+2026-07-11 更新：官方 Robot Arm dense checkpoint 已下载并验证可读；ID/OOD eval split
+完整，train 视频仍后台补齐但不阻塞 Gate A。Gate A 已执行并 **fail**：full temporal
+shuffle gap 可测，但所有局部单维 response/noise ratios 均低于阈值 `2.0`，三种子随机
+维度组对照也没有支持稳定各向异性。结论：Robot Arm specialist/KD 不准运行；先诊断
+action-conditioning/evaluator，或把本分支写成 response-aware evaluation/structured
+action encoding 的负结果。
+
+## Final ACWM-Phys Decision
+
+- Push Cube: narrow feasibility only. The signed-target-coordinate result validates the
+  paired-response evaluation idea, not a general specialist/KD claim.
+- Reacher: partition failure. Magnitude is non-degenerate but not a justified response
+  or motion-effect regime, and the dense baseline is already strongly action-responsive.
+- Robot Arm: Gate A failure. Full shuffle response is measurable, but stable local
+  response anisotropy above the paired-noise floor and random grouping variance was not found.
+- Project-level decision: **no-go for specialist teachers and response/prediction KD on
+  ACWM-Phys under the current evidence**. Continue only as a negative response-structure
+  study or restart on a true high-DoF heterogeneous action benchmark that first passes Gate A.
+
 ## Continue If
 
 - The latent-action baseline matches or beats raw action on Push Cube/Reacher without breaking visual metrics.

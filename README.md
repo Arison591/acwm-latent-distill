@@ -26,6 +26,27 @@ ACWM-Phys is a benchmark for evaluating action-conditioned video world models un
 
 Each environment provides 1,000 training trajectories + controlled in-distribution (InD) and out-of-distribution (OoD) test splits. We also provide **ACWM-DiT**, a latent diffusion transformer baseline trained with flow matching.
 
+## Current Research Status
+
+This fork contains an action-response distillation study on top of ACWM-Phys. The
+current conclusion is negative for the original specialist/KD direction on ACWM-Phys.
+
+- Push Cube produced only a narrow signed-target-coordinate feasibility signal; it is
+  not evidence for general magnitude specialists.
+- Reacher rejected the low/high-magnitude specialist partition and showed an already
+  action-responsive dense baseline.
+- Robot Arm completed Gate A with the official dense checkpoint and failed: full
+  temporal action shuffle response is measurable, but stable local response anisotropy
+  above the paired-noise floor was not found.
+
+Under the current protocol, specialist training and KD are not allowed unless a future
+high-DoF heterogeneous action dataset first passes the response-structure gate. The
+old magnitude-specialist configs under `configs/alrd/` are retained as legacy and
+negative-hypothesis artifacts, not active defaults.
+
+See `docs/negative_result_response_structure.md` and
+`docs/negative_result_summary_zh.md` for the report.
+
 ---
 
 ## Installation
