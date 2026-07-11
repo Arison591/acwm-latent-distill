@@ -1,21 +1,153 @@
-# ACWM-Phys
+# Action-Response Structure in ACWM-Phys
 
-**ACWM-Phys: Investigating Generalized Physical Interaction in Action-Conditioned Video World Models**
+**A negative study on when action-conditioned video world models should use specialist models.**
 
-[Project Page](https://xavihart.github.io/ACWM-Phys) · [arXiv](#) · [Dataset](https://huggingface.co/datasets/t1an/ACWM-Phys) · [Checkpoints](https://huggingface.co/t1an/ACWM-Phys-checkpoints)
+This repository is a research fork of
+[ACWM-Phys](https://xavihart.github.io/ACWM-Phys). The upstream project provides
+the benchmark, datasets, checkpoints, and ACWM-DiT baseline. Our work asks a
+different question:
 
-> *Haotian Xue†, Yipu Chen\*, Liqian Ma\*, Zelin Zhao, Lama Moukheiber, Yuchen Zhu, Yongxin Chen*
-> 
-> Georgia Institute of Technology
-> (†project lead, \*equal contribution)
+> When is it actually justified to replace one dense action-conditioned world
+> model with action-response specialists and distillation?
 
----
+Our current answer is negative for the tested ACWM-Phys settings. The dense
+baseline can show action response, but we did not find a stable response
+structure that justifies specialist training under the current protocol.
 
-![Teaser](assets/teaser.png)
+## Current Conclusion
 
-## Overview
+Specialist training and response-KD are **not active directions** in this repo
+unless a future dataset first passes the response-structure gate.
 
-ACWM-Phys is a benchmark for evaluating action-conditioned video world models under diverse physical dynamics. It spans **8 environments** across 4 physics regimes:
+| Environment | Question tested | Main evidence | Decision |
+|---|---|---|---|
+| Push Cube | Can a simple action partition support response distillation? | Only a narrow signed-target-coordinate feasibility signal was found. The original magnitude split was degenerate. | Feasibility only, not a general specialist result |
+| Reacher | Does low/high action magnitude define useful specialists? | The magnitude split was rejected; the official dense baseline was already strongly action-responsive. | No specialist/KD |
+| Robot Arm | Is there stable local action-response anisotropy above noise? | Gate A failed: action-shuffle response was measurable, but stable per-dimension response above paired noise and random-group variance was not found. | No specialist/KD |
+
+The project-level result is therefore a **negative result**: on these tested
+ACWM-Phys environments, specialist/KD training would be premature and poorly
+justified.
+
+## What This Repository Contributes
+
+- A response-structure gate for deciding whether specialist models are justified
+  before training them.
+- A Robot Arm action audit and response probe over the official dense checkpoint.
+- A Reacher baseline diagnosis showing that the dense baseline already responds
+  to torque changes.
+- A Push Cube feasibility study showing that the only useful signal was narrower
+  than the original magnitude-specialist hypothesis.
+- A written negative-result report documenting the failure modes and stopping
+  criteria.
+
+## Reports and Status
+
+- Full English report:
+  [`docs/negative_result_response_structure.md`](docs/negative_result_response_structure.md)
+- 中文总结:
+  [`docs/negative_result_summary_zh.md`](docs/negative_result_summary_zh.md)
+- Current project status:
+  [`docs/current_status.md`](docs/current_status.md)
+- Go / no-go decision:
+  [`docs/go_no_go.md`](docs/go_no_go.md)
+- Experiment protocol:
+  [`docs/experiment_protocol.md`](docs/experiment_protocol.md)
+
+Additional environment-specific notes:
+
+- [`docs/robot_arm_response_probe.md`](docs/robot_arm_response_probe.md)
+- [`docs/robot_arm_action_semantics.md`](docs/robot_arm_action_semantics.md)
+- [`docs/robot_arm_oracle_gate.md`](docs/robot_arm_oracle_gate.md)
+- [`docs/reacher_baseline_diagnosis.md`](docs/reacher_baseline_diagnosis.md)
+- [`docs/reacher_action_semantics.md`](docs/reacher_action_semantics.md)
+- [`docs/reacher_oracle_gate.md`](docs/reacher_oracle_gate.md)
+- [`docs/alrd_validation_2026-07-11.md`](docs/alrd_validation_2026-07-11.md)
+- [`docs/response_kd_results.md`](docs/response_kd_results.md)
+
+## Repository Map
+
+| Path | Purpose |
+|---|---|
+| `acwm/action_latent/response.py` | Shared response-measurement utilities |
+| `scripts/response_structure/` | Robot Arm audit, response probe, aggregation, random-group control, and Gate A scripts |
+| `configs/alrd/` | Legacy Push Cube ALRD configs kept as negative-hypothesis artifacts |
+| `docs/` | Reports, status notes, go/no-go decisions, and environment diagnostics |
+| `results/` | Local generated artifacts; ignored by Git unless explicitly force-added |
+
+## Reproducing the Robot Arm Gate
+
+The checked-in report records the measured results. To rerun the Robot Arm gate,
+prepare the ACWM-Phys Robot Arm data and the official Robot Arm checkpoint, then
+use the response-structure scripts.
+
+Example layout:
+
+```bash
+export ACWM_DATA_ROOT=/path/to/ACWM-Phys
+export ROBOT_ARM_CKPT=/path/to/VideoDiT_S_robot_arm_240x240/latest.pt
+```
+
+Audit the available Robot Arm data:
+
+```bash
+python scripts/response_structure/audit_robot_arm.py \
+  --data-root "$ACWM_DATA_ROOT" \
+  --output results/response_structure/robot_arm/action_audit/action_audit.json
+```
+
+Run response probes for each split and seed:
+
+```bash
+python scripts/response_structure/run_response_probe.py \
+  --cfg configs/envs/robot_arm.yaml \
+  --ckpt "$ROBOT_ARM_CKPT" \
+  --schema results/response_structure/robot_arm/action_audit/action_schema.json \
+  --split ind_test \
+  --seed 0 \
+  --steps 50 \
+  --max-batches 8 \
+  --output results/response_structure/robot_arm/probe/ind_test/seed_0/summary.json
+```
+
+Aggregate probe outputs and evaluate Gate A:
+
+```bash
+python scripts/response_structure/aggregate_response_probe.py \
+  --probe-root results/response_structure/robot_arm/probe/ind_test \
+  --output results/response_structure/robot_arm/probe/ind_test_aggregate.json
+
+python scripts/response_structure/gate_a.py \
+  --audit results/response_structure/robot_arm/action_audit/action_audit.json \
+  --probe-root results/response_structure/robot_arm/probe/ind_test \
+  --random-probe-root results/response_structure/robot_arm/probe/random_group_control \
+  --output results/response_structure/robot_arm/gate_a/decision.json
+```
+
+The recorded Robot Arm decision in this study was `fail`, so no specialist or KD
+training was launched from the gate.
+
+## Development Notes
+
+The project keeps upstream ACWM-Phys training and evaluation code available for
+context, but the current research branch is documentation- and diagnosis-focused.
+
+For a quick local sanity check:
+
+```bash
+python -m compileall -q acwm/action_latent scripts/response_structure tests/alrd
+python tests/alrd/test_smoke.py
+```
+
+## Upstream ACWM-Phys
+
+This work depends on the original ACWM-Phys benchmark and released checkpoints:
+
+- Project page: <https://xavihart.github.io/ACWM-Phys>
+- Dataset: <https://huggingface.co/datasets/t1an/ACWM-Phys>
+- Checkpoints: <https://huggingface.co/t1an/ACWM-Phys-checkpoints>
+
+The upstream benchmark covers eight physical environments:
 
 | Category | Environments |
 |---|---|
@@ -24,224 +156,10 @@ ACWM-Phys is a benchmark for evaluating action-conditioned video world models un
 | Particle | Push Sand, Pour Water |
 | Kinematics | Robot Arm, Reacher |
 
-Each environment provides 1,000 training trajectories + controlled in-distribution (InD) and out-of-distribution (OoD) test splits. We also provide **ACWM-DiT**, a latent diffusion transformer baseline trained with flow matching.
+Please cite the original ACWM-Phys work when using the benchmark, dataset, or
+released checkpoints:
 
-## Current Research Status
-
-This fork contains an action-response distillation study on top of ACWM-Phys. The
-current conclusion is negative for the original specialist/KD direction on ACWM-Phys.
-
-- Push Cube produced only a narrow signed-target-coordinate feasibility signal; it is
-  not evidence for general magnitude specialists.
-- Reacher rejected the low/high-magnitude specialist partition and showed an already
-  action-responsive dense baseline.
-- Robot Arm completed Gate A with the official dense checkpoint and failed: full
-  temporal action shuffle response is measurable, but stable local response anisotropy
-  above the paired-noise floor was not found.
-
-Under the current protocol, specialist training and KD are not allowed unless a future
-high-DoF heterogeneous action dataset first passes the response-structure gate. The
-old magnitude-specialist configs under `configs/alrd/` are retained as legacy and
-negative-hypothesis artifacts, not active defaults.
-
-See `docs/negative_result_response_structure.md` and
-`docs/negative_result_summary_zh.md` for the report.
-
----
-
-## Installation
-
-We use [uv](https://github.com/astral-sh/uv) for fast, reproducible environment management.
-
-```bash
-git clone https://github.com/xavihart/ACWM-Phys.git
-cd ACWM-Phys
-
-# Create and activate a virtual environment
-uv venv --python 3.10
-source .venv/bin/activate
-
-# Install dependencies
-uv pip install -r requirements.txt
-
-# Flash Attention (recommended for speed)
-uv pip install flash-attn --no-build-isolation
-```
-
----
-
-## Dataset
-
-Download the ACWM-Phys dataset from HuggingFace:
-
-```bash
-huggingface-cli download t1an/ACWM-Phys --repo-type dataset --local-dir ./data
-```
-
-Then set the data root:
-
-```bash
-export ACWM_DATA_ROOT=./data
-```
-
-Expected structure:
-```
-data/
-├── rigid_dynamics/
-│   ├── push_block/      {ind_train, ind_test, ood_test}/
-│   └── stack_cube/
-├── deformable/
-│   ├── push_rope/
-│   └── clothmove/
-├── particle/
-│   ├── push_sand/
-│   └── pour_water/
-└── kinematics/
-    ├── robot_arm_64/
-    └── reacher/
-```
-
-### Dataset Format
-
-Each split directory (e.g. `push_block/ind_train/`) contains:
-
-- **`episode_{i}.mp4`** — RGB video at 10 fps, 240×240 (240×400 for Push Sand)
-- **`metadata.pt`** — serialized list of episode dicts (load with `torch.load`)
-
-Each entry in `metadata.pt` has:
-
-| Field | Type | Description |
-|---|---|---|
-| `video_path` | `str` | Filename relative to the split dir, e.g. `episode_0.mp4` |
-| `actions` | `FloatTensor [T, action_dim]` | Per-step action sequence |
-| `length` | `int` | Number of frames T |
-| `seed` | `int` | Random seed used during simulation |
-| `episode_idx` | `int` | Global episode index (some environments) |
-
-Example:
-```python
-import torch
-
-metadata = torch.load("data/rigid_dynamics/push_block/ind_train/metadata.pt", weights_only=False)
-entry = metadata[0]
-# entry["video_path"]  → "episode_0.mp4"
-# entry["actions"]     → Tensor of shape [T, 2]
-# entry["length"]      → 16
-```
-
----
-
-## Checkpoints
-
-Download the pretrained DiT-S checkpoints (100k steps) and the Wan 2.1 VAE:
-
-```bash
-huggingface-cli download t1an/ACWM-Phys-checkpoints --local-dir ./checkpoints
-```
-
-Set the VAE path:
-
-```bash
-export WAN_VAE_PATH=./checkpoints/Wan2.1_VAE.pth
-```
-
-The env configs in `configs/envs/` also reference `WAN_VAE_PATH` via the `vae_config` field.
-
-### Released Checkpoints
-
-All checkpoints are DiT-S (~200M parameters), trained for 100k steps with flow matching.
-
-| Environment | Category | Action Dim | Resolution | Checkpoint |
-|---|---|---|---|---|
-| Push Cube | Rigid-Body | 2 | 240×240 | [link](https://huggingface.co/t1an/ACWM-Phys-checkpoints/blob/main/VideoDiT_S_push_cube_240x240/latest.pt) |
-| Stack Cube | Rigid-Body | 7 | 240×240 | [link](https://huggingface.co/t1an/ACWM-Phys-checkpoints/blob/main/VideoDiT_S_stack_cube_240x240/latest.pt) |
-| Push Rope | Deformable | 2 | 240×240 | [link](https://huggingface.co/t1an/ACWM-Phys-checkpoints/blob/main/VideoDiT_S_push_rope_240x240/latest.pt) |
-| Cloth Move | Deformable | 3 | 240×240 | [link](https://huggingface.co/t1an/ACWM-Phys-checkpoints/blob/main/VideoDiT_S_clothmove_240x240_240x240/latest.pt) |
-| Push Sand | Particle | 7 | 240×400 | [link](https://huggingface.co/t1an/ACWM-Phys-checkpoints/blob/main/VideoDiT_S_push_sand_240x400/latest.pt) |
-| Pour Water | Particle | 4 | 240×240 | [link](https://huggingface.co/t1an/ACWM-Phys-checkpoints/blob/main/VideoDiT_S_pour_water_240x240/latest.pt) |
-| Robot Arm | Kinematics | 7 | 240×240 | [link](https://huggingface.co/t1an/ACWM-Phys-checkpoints/blob/main/VideoDiT_S_robot_arm_240x240/latest.pt) |
-| Reacher | Kinematics | 2 | 240×240 | [link](https://huggingface.co/t1an/ACWM-Phys-checkpoints/blob/main/VideoDiT_S_reacher_240x240/latest.pt) |
-
----
-
-## Evaluation
-
-Evaluate a single environment:
-
-```bash
-python eval.py --env push_cube --steps 50 --split both --save_videos
-```
-
-Evaluate all 8 environments:
-
-```bash
-bash scripts/eval_all.sh --save_videos
-```
-
-Results are written to `results/results.md`. Videos are saved under `results/{env}/steps_50/{split}/sample_{i}/video.mp4` as side-by-side GT (left) | Prediction (right).
-
-**Key arguments:**
-
-| Argument | Default | Description |
-|---|---|---|
-| `--env` | required | Environment name |
-| `--steps` | 50 | Denoising steps |
-| `--split` | both | `ind_test`, `ood_test`, or `both` |
-| `--ckpt` | auto | Override checkpoint path |
-| `--cfg` | auto | Override config path |
-| `--save_videos` | off | Save GT\|Pred side-by-side videos |
-
----
-
-## Training
-
-Train DiT-S on Push Cube (single GPU):
-
-```bash
-python train.py --config configs/envs/push_cube.yaml
-```
-
-Multi-GPU (4 GPUs):
-
-```bash
-torchrun --nproc_per_node=4 train.py --config configs/envs/push_cube.yaml
-```
-
-SLURM example:
-
-```bash
-sbatch scripts/train_slurm.sh push_cube
-```
-
-Training hyperparameters are in `configs/envs/{env}.yaml`. Model size (S/M/L) is set via `model_type: dit_s` in the config.
-
----
-
-## Model Architecture
-
-ACWM-DiT takes the first video frame + full action sequence and predicts the complete future trajectory:
-
-1. **Causal VAE (Wan 2.1)** — encodes video into 16-ch latent tokens at H/8×W/8, 4× temporal compression
-2. **DiT with flow matching** — denoises the full latent trajectory; supports AdaLN and cross-attention action conditioning
-3. **Action conditioning** — injected via AdaLN (default) or cross-attention (better for high-dim actions)
-
-Three model sizes: DiT-S (~200M), DiT-M (~600M), DiT-L (~800M).
-
----
-
-## Metrics
-
-| Metric | Description |
-|---|---|
-| MSE | Mean squared error on pixel values in [0,1] |
-| M-MSE | Motion-weighted MSE (floor 0.01; focuses on moving regions) |
-| PSNR | Peak signal-to-noise ratio (dB) |
-| SSIM | Structural similarity index |
-
----
-
-## Citation
-```
+```bibtex
 @article{xue2026acwm,
   title={ACWM-Phys: Investigating Generalized Physical Interaction in Action-Conditioned Video World Models},
   author={Xue, Haotian and Chen, Yipu and Ma, Liqian and Zhao, Zelin and Moukheiber, Lama and Zhu, Yuchen and Che, Yongxin},
