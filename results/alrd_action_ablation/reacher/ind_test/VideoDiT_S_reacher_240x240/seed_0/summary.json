@@ -1,0 +1,111 @@
+{
+  "action_response_curve": [
+    {
+      "alpha": 0.25,
+      "response_mse": 0.001305156125454232
+    },
+    {
+      "alpha": 0.5,
+      "response_mse": 0.0012088268849765882
+    },
+    {
+      "alpha": 0.75,
+      "response_mse": 0.0010793057444971055
+    },
+    {
+      "alpha": 1.0,
+      "response_mse": 0.0
+    },
+    {
+      "alpha": 1.5,
+      "response_mse": 0.0008637341525172815
+    },
+    {
+      "alpha": 2.0,
+      "response_mse": 0.0006407573746400885
+    }
+  ],
+  "action_sensitivity_mse": {
+    "reverse": 0.001125206719734706,
+    "scale_0_25": 0.001305156125454232,
+    "scale_0_5": 0.0012088268849765882,
+    "scale_0_75": 0.0010793057444971055,
+    "scale_1_5": 0.0008637341525172815,
+    "scale_2": 0.0006407573746400885,
+    "zero": 0.0013710563944187015
+  },
+  "bucket": null,
+  "bucket_score_type": null,
+  "bucket_threshold": null,
+  "checkpoint": "/root/autodl-tmp/acwm-reacher-checkpoint/VideoDiT_S_reacher_240x240/latest.pt",
+  "counterfactual_semantics": {
+    "reverse": "opposite joint torques",
+    "scale_0_25": "quarter torque",
+    "scale_0_5": "half torque",
+    "scale_0_75": "three-quarter torque",
+    "scale_1_5": "one-and-a-half torque",
+    "scale_2": "doubled torque",
+    "zero": "zero torque"
+  },
+  "env": "reacher",
+  "metrics": {
+    "original": {
+      "masked_mse": 0.008084887696895748,
+      "mse": 0.000374126266251551,
+      "psnr": 34.37982399403438,
+      "ssim": 0.991045817732811
+    },
+    "reverse": {
+      "masked_mse": 0.016701201908290386,
+      "mse": 0.0011909666936844587,
+      "psnr": 29.283178803794804,
+      "ssim": 0.982575960457325
+    },
+    "scale_0_25": {
+      "masked_mse": 0.03136721672490239,
+      "mse": 0.001389141718391329,
+      "psnr": 28.57331837059134,
+      "ssim": 0.9794963151216507
+    },
+    "scale_0_5": {
+      "masked_mse": 0.027737855445593596,
+      "mse": 0.001295448382734321,
+      "psnr": 28.88262988652003,
+      "ssim": 0.980900764465332
+    },
+    "scale_0_75": {
+      "masked_mse": 0.025763229466974735,
+      "mse": 0.0011619652213994414,
+      "psnr": 29.355679654572203,
+      "ssim": 0.9836705699563026
+    },
+    "scale_1_5": {
+      "masked_mse": 0.018247504718601704,
+      "mse": 0.000933596063987352,
+      "psnr": 30.298624110323566,
+      "ssim": 0.9855412319302559
+    },
+    "scale_2": {
+      "masked_mse": 0.01553246786352247,
+      "mse": 0.0007183249763329513,
+      "psnr": 31.43728858645521,
+      "ssim": 0.9854761362075806
+    },
+    "zero": {
+      "masked_mse": 0.03467495949007571,
+      "mse": 0.0014532553759636357,
+      "psnr": 28.376587732147346,
+      "ssim": 0.9791223108768463
+    }
+  },
+  "paired_initial_noise": true,
+  "scale_monotonicity": {
+    "comparable_pairs": 4,
+    "definition": "response should be non-decreasing with |alpha - 1|; equal-distance ties are excluded",
+    "fraction": 0.75,
+    "satisfied_pairs": 3
+  },
+  "seed": 0,
+  "split": "ind_test",
+  "steps": 10
+}

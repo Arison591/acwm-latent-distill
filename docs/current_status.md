@@ -1,8 +1,33 @@
 # ACWM Latent Distillation Current Status
 
-Date: 2026-07-07
+Date: 2026-07-11
 
-## Idea Status
+## Response-first pivot（当前工作流）
+
+Reacher 的停止门已是最终结论：不得恢复 Reacher KD、不得调 `mu_resp`、不得再把
+动作幅值分桶当作默认专家划分。Robot Arm 的
+`ActionSchema + ResponseProbe + CounterfactualEvaluator` 与 Gate A 已完成；结果没有
+准入专家或 KD。新增工具会将大型逐窗口产物写入
+`/root/autodl-tmp/acwm-response-results/`，避免系统盘空间风险。
+
+本机盘点（2026-07-11）：Robot Arm 的三份元数据已下载到数据盘（训练 2,002 条，
+ID/OOD 各 105 条）；ID/OOD 的 210 个视频已完整，训练视频仍在后台补齐。官方
+`VideoDiT_S_robot_arm_240x240/latest.pt` 已下载到数据盘并可由 PyTorch 读取，
+sha256 为 `438303c23acfd153ac42ddb8eb84cc412687432242bafcb1276b85f03934c6f7`。
+Gate A 已在官方 dense checkpoint 上执行：三种子 ID local per-dim response
+均低于成对噪声地板阈值，随机维度组对照不能解释出稳定优势，决策为
+**C：Gate A fail，停止专家/KD，先诊断条件路径或评估器**。
+
+当前分支现在应被整理为 ACWM-Phys response-structure 负结果研究。除非未来引入真正
+高 DoF、异构动作的数据集并先通过 Gate A，否则 specialist teacher、prediction KD 和
+response KD 都不再是活动路径。
+
+枢纽前保留记录：起点分支为 `agent/reacher-response-validation`，起点提交为
+`118813a Validate Reacher action response gates`，上游为
+`origin/agent/reacher-response-validation`。Robot Arm 工作使用独立分支
+`agent/robot-arm-response-probe`；既有 Reacher 结果和文档未删除或改写。
+
+## 历史状态（遗留假设，非活动默认）
 
 The idea is still worth pursuing, but the useful version is narrower than the original wording "distill from latent".
 
@@ -43,7 +68,7 @@ https://github.com/xavihart/ACWM-Phys-dev
 Current branch:
 
 ```bash
-alrd/scaffold
+main
 ```
 
 Implemented components:
@@ -121,6 +146,22 @@ Two important fixes landed during setup:
 
 - sampled datasets now preserve original trajectory ids after `max_trajs` sampling;
 - Push Cube action magnitude is constant, so bucket splitting falls back to `signed_action_0`.
+
+## Validated Update (2026-07-11)
+
+See [ALRD Validation Report](alrd_validation_2026-07-11.md) for the full protocol and
+numbers. The key result is a narrowed but positive feasibility signal: on Push Cube,
+signed-target-coordinate-specialist response KD improved paired `pred(a)` versus `pred(-a)` sensitivity
+by over two orders of magnitude relative to a matched latent-only baseline on both ID
+and OOD subsets, while keeping true-action rollout quality essentially unchanged.
+The current paired eval uses the usable-train signed-coordinate threshold `signed_action_0 =
+-0.018154`; ID/OOD eval videos are complete, while local `ind_train` is partially
+repaired to 1129/1500 available videos on the data disk.
+
+This replaces the old small/large-magnitude wording for Push Cube. Its action magnitude
+is constant, so the feasibility split is an absolute-target signed-coordinate regime,
+not demonstrated motion direction. The opposite signed-coordinate teacher was
+action-blind and must not be used for distillation until it passes the oracle gate.
 
 ## Next Steps
 
